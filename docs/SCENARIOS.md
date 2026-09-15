@@ -142,7 +142,13 @@ Alternatively, use `--catalog PATH` for either supported local format:
 3. Observatory's normalized `WigleUploadData` version 1, or the saved-upload GET
    response `{ "upload": { "data": ... } }` (including its upload summary).
 
-For an Observatory download, use the existing compiler with a local route:
+In Observatory, open the device's saved WiGLE uploads, select a file, wait for
+its observations to load, then choose **Download for Hooking**. The download
+includes every saved observation regardless of the table's filter or page. It
+preserves original observation/query dates and incomplete-coverage warnings;
+downloading does not refresh WiGLE or change the device.
+
+Use that download with a local route:
 
 ```sh
 python3 -B scenario_cli.py build \

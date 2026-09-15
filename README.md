@@ -49,7 +49,7 @@ The versioned [scenario schema](schemas/scenario-v1.schema.json) specifies units
 - [Phone console and real call controls](docs/CONSOLE.md)
 - [Android Auto templates and host requirements](docs/ANDROID-AUTO.md)
 - [Map rendering and tile policy](docs/MAP.md)
-- [1.3 validation and device limitations](docs/CONSOLE-1.3-VALIDATION.md)
+- [1.3.1 validation and device limitations](docs/CONSOLE-1.3.1-VALIDATION.md)
 
 ## Verification
 

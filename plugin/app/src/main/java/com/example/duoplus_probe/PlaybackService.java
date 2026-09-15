@@ -164,9 +164,14 @@ public final class PlaybackService extends Service {
         releaseWake();
         worker.post(()->{
             if(!current(generation)||engine==null)return;
-            try{worker.removeCallbacks(tick);engine.pause(SystemClock.elapsedRealtimeNanos());releaseWake();
-                message=hidden?"Paused because playback notifications were disabled.":"Paused. Scenario time and output delivery are frozen.";
-                publish(true,generation);if(hidden)removeForeground(generation);
+            try{worker.removeCallbacks(tick);long now=SystemClock.elapsedRealtimeNanos();engine.pause(now);releaseWake();
+                String state=engine.preview(now).state;
+                if("PAUSED".equals(state))
+                    message=hidden?"Paused because playback notifications were disabled.":"Paused. Scenario time and output delivery are frozen.";
+                else if("COMPLETED".equals(state))message="Scenario completed. Restart or export the report.";
+                // Pause may supersede queued completion/Stop cleanup. Preserve terminal
+                // state and its message, and perform cleanup under this newer generation.
+                publish(true,generation);if(hidden||!"PAUSED".equals(state))removeForeground(generation);
             }catch(RuntimeException error){failPlayback(generation,error);}
         });
     }

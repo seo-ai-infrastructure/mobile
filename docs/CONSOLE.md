@@ -1,6 +1,6 @@
 # Call and map console
 
-Open **Open call & map console** from DuoPlus Simulator. The phone pane controls real Android Telecom calls. The map follows the loaded synthetic scenario and uses the same playback session as the simulator and Android Auto view.
+Open **Open call & map console** from Hooking. The phone pane controls real Android Telecom calls. The map follows the loaded synthetic scenario and uses the same playback session as the instrument panel and Android Auto view.
 
 In portrait, the compact phone pane shows the caller, call duration, main controls, and status. Tap **Keypad** to expand the number entry, phone-app chooser, secondary call controls, and notification settings. Expanded content scrolls within the phone pane. Landscape shows the call pane beside the map.
 
@@ -44,4 +44,4 @@ The Android Auto integration projects the simulated route and playback controls 
 
 ## Validation limits
 
-Real incoming/outgoing calls, phone-role selection, carrier behavior, Bluetooth call routing, and a physical Android Auto head unit have **not been tested**. No real call was placed and no default phone role was changed during development checks. See [console validation](CONSOLE-VALIDATION.md) for the current build and functional-check evidence.
+Real incoming/outgoing calls, phone-role selection, carrier behavior, Bluetooth call routing, and a physical Android Auto head unit have **not been tested**. No real call was placed and no default phone role was changed during development checks. See [current validation](CONSOLE-1.3.1-VALIDATION.md) for build and functional-check evidence.

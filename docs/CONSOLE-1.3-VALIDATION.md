@@ -23,10 +23,30 @@ loss, zero-noise IMU, late-frame omissions, pause clock rebasing, non-grid route
 completion, and no reuse of an omitted terminal sequence. Explicit steps and
 STILL/movement conflicts are validated on both the Java and Python import paths.
 
-This release changes scheduling and packaging. The older ten-minute measurements
-in CONSOLE-VALIDATION.md apply to 1.2, not a new 1.3 endurance run. Screen-off Doze,
-a physical Auto head unit and real calls were not newly tested. No battery
+## Follow-up device verification
+
+A 600-second background run passed on the selected DuoPlus Pixel 6 with this
+exact 1.3 APK. Including its setup and notification checks, it ran 611.903 seconds:
+46,170 frames delivered, one omitted IMU sample, maximum scheduler lateness
+16.205641 ms and mean 0.651982 ms. History retained 2,048 frames and evicted
+44,122. These timestamps measure entry to the dispatcher, not view rendering.
+The instrumentation process remained active. Pause/Resume through notification
+actions, UI reopening, Stop, wake-lock release and JSON report validation passed.
+
+Six AndroidX Auto fake-host/surface tests plus two import/index tests passed.
+The private Flamingo import retained source metadata, preparing 452 of 454
+catalog records for the route. This phone lacks SQLite R-tree, so the reported
+`sqlite_bbox_btree` fallback performed bounding-box and exact-distance filtering.
+
+A screen-off run was attempted but correctly failed its precondition: the
+DuoPlus device remained interactive after Sleep. Background measurements are
+not screen-off/Doze evidence. Android Auto is absent on this phone; the local
+Desktop Head Unit runs but projection needs a compatible phone host. No battery
 optimization exemption was requested and no real call was made.
+
+A deterministic follow-up test exposed a Pause/completion race in this release:
+Pause could invalidate queued foreground cleanup after the route completed.
+This is fixed and regression-tested in 1.3.1.
 
 APK SHA-256:
 
