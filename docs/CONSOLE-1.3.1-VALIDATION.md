@@ -45,3 +45,48 @@ APK SHA-256:
 ```text
 1da8e6e050c38e78c0ae9a84ce24b120d65292b0c42e06f6e6242f9429492e32
 ```
+
+## Final exact-APK device run
+
+The installed 1.3.1 APK above passed 600 seconds of background playback; the
+full exercise including setup/actions took 611.884 seconds. It delivered
+46,173 frames and omitted 2; maximum scheduler lateness was
+58.034944 ms and mean lateness 0.651574 ms.
+The bounded history retained 2,048 frames and evicted 44,125.
+
+| Channel | Delivered | Omitted | Max lateness (ms) |
+| --- | ---: | ---: | ---: |
+| gnss | 607 | 0 | 2.717 |
+| wifi | 61 | 0 | 1.124 |
+| cell | 607 | 0 | 2.717 |
+| ble | 607 | 0 | 2.717 |
+| imu | 30,334 | 2 | 18.035 |
+| magnetic | 6,068 | 0 | 58.035 |
+| pressure | 607 | 0 | 2.717 |
+| power | 607 | 0 | 2.717 |
+| activity | 607 | 0 | 2.717 |
+| pose | 6,068 | 0 | 58.035 |
+
+Notification Pause/Resume/Stop, UI reopening, wake-lock release and report-schema
+validation passed. The instrumentation process was active; these are scheduler
+entry timestamps, not UI latency or a hard real-time guarantee. Screen-off was
+not achieved and is not implied by this background run.
+
+The current APK also passed date-line catalog and malformed/oversized import
+checks. Its private Flamingo import prepared 452 of 454 source records
+using `sqlite_bbox_btree`, preserved metadata, and froze delivery on Stop.
+A visible-UI start followed by force-stop and cold reopening produced a new
+process in EMPTY state, with Start disabled and no foreground playback. It never
+silently resumed the previous run. No calling role or permission was changed.
+
+## WiGLE data handoff
+
+Observatory's **Download for Hooking** action is live. It exports the complete
+saved-upload wrapper, preserving query/observation dates, opaque cellular/BLE
+metadata and incomplete-coverage warnings. Table filtering/pagination does not
+truncate the download. The action makes no API write or device-location change.
+
+Fourteen focused download/UI tests and the dashboard build passed. The deployed
+JavaScript matches the reviewed source byte for byte. An export-to-compiler
+round trip passed runtime and JSON Schema validation. Use the downloaded
+catalog with a route, then import the resulting scenario through Hooking.
