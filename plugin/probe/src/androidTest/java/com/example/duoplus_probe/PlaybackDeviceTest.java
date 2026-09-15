@@ -18,6 +18,8 @@ import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
+import androidx.test.runner.lifecycle.Stage;
 import com.example.duoplus_probe.sim.Scenario;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -167,7 +169,26 @@ public final class PlaybackDeviceTest {
             evidence.put("screen_off_duration_seconds",requireScreenOff?duration:0);evidence.put("background_duration_seconds",duration);evidence.put("background_end_snapshot",new JSONObject(binder.snapshot()));
             evidence.put("spatial_index",binder.snapshot().get("spatial_index"));
             assertEquals(Boolean.TRUE,binder.snapshot().get("foreground"));assertEquals(Boolean.TRUE,binder.snapshot().get("wake_lock"));
-            shell("input keyevent 224");instrumentation.startActivitySync(new Intent(context,ProbeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            // Save the completed measurement before any UI lifecycle assertions.
+            File checkpoint=new File(context.getFilesDir(),"background-checkpoint-report.json");
+            if(checkpoint.exists())assertTrue(checkpoint.delete());
+            instrumentation.runOnMainSync(()->binder.exportDocument(Uri.fromFile(checkpoint)));
+            waitFor(()->String.valueOf(binder.snapshot().get("message")).startsWith("Report exported"),10000,"background timing checkpoint");
+            JSONObject measured=new JSONObject(new String(Files.readAllBytes(checkpoint.toPath()),StandardCharsets.UTF_8));
+            evidence.put("timing_metrics",measured.getJSONObject("metrics"));
+            try(FileOutputStream output=new FileOutputStream(new File(context.getFilesDir(),"background-checkpoint-evidence.json"))){output.write(evidence.toString(2).getBytes(StandardCharsets.UTF_8));}
+            shell("input keyevent 224");
+            // NEW_TASK can reuse the existing activity; startActivitySync waits for a creation
+            // callback that never occurs. Observe actual resumed state instead.
+            instrumentation.runOnMainSync(()->context.startActivity(new Intent(context,ProbeActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
+            waitFor(()->{
+                java.util.concurrent.atomic.AtomicBoolean resumed=new java.util.concurrent.atomic.AtomicBoolean();
+                instrumentation.runOnMainSync(()->{
+                    for(Activity current:ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED))
+                        if(current instanceof ProbeActivity)resumed.set(true);
+                });return resumed.get();
+            },10000,"probe UI resumed after background playback");
             evidence.put("return_to_activity_state",binder.snapshot().get("state"));
             sendNotificationAction("Stop");waitFor(()->state(binder,"STOPPED")&&Boolean.FALSE.equals(binder.snapshot().get("foreground")),5000,"notification stop");
             assertEquals(Boolean.FALSE,binder.snapshot().get("wake_lock"));evidence.put("notification_stop_releases_wake_and_foreground",true);

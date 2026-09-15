@@ -77,6 +77,27 @@ public final class MapProjectionTest {
         assertTrue(new MapProjection.Camera(0, 0, .4, 0, 0, 0, 8000, 4000).visibleTiles().size() <= MapProjection.MAX_VISIBLE_TILES);
         assertTrue(new MapProjection.Camera(0, 0, .4, 0, 0, 0, 1e7, 1e7).visibleTiles().isEmpty());
     }
+    @Test public void tinyViewportKeepsEveryVisibleTileCornerInFrontOfCamera() {
+        for (double heading : new double[]{0, .6, Math.PI / 2, 2.8}) {
+            MapProjection.Camera camera = new MapProjection.Camera(-.0013732910154935106, .001373291015625,
+                    heading, 0, 70, 40, 100, 50);
+            List<MapProjection.VisibleTile> tiles = camera.visibleTiles(); assertFalse(tiles.isEmpty());
+            float[] out = new float[2];
+            for (MapProjection.VisibleTile tile : tiles) {
+                double count = 1 << tile.tile.z;
+                for (int dx = 0; dx <= 1; dx++) for (int dy = 0; dy <= 1; dy++)
+                    assertTrue(camera.project((tile.worldX + dx) / count, (tile.tile.y + dy) / count, out, 0));
+            }
+        }
+    }
+    @Test public void normalViewportRetainsOriginalPerspective() {
+        MapProjection.Camera camera = new MapProjection.Camera(0, 0, 0, 0, 0, 0, 800, 600);
+        float[] out = new float[2];
+        assertTrue(camera.project(camera.centerX + 100 / camera.worldSize, camera.centerY - 100 / camera.worldSize, out, 0));
+        double denominator = 960 + 100 * Math.sin(Math.toRadians(35));
+        assertEquals(400 + 100 * 960 / denominator, out[0], .001);
+        assertEquals(396 - 100 * Math.cos(Math.toRadians(35)) * 960 / denominator, out[1], .001);
+    }
     @Test(expected = IllegalArgumentException.class) public void invalidTileLatitudeIsRejected() {
         new MapProjection.Tile(10, -1, 1024);
     }

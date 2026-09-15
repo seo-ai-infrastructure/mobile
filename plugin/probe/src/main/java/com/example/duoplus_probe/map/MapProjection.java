@@ -58,7 +58,11 @@ public final class MapProjection {
             centerX = longitudeX(lon); centerY = latitudeY(lat); zoom = zoomForSpeed(speedMps);
             worldSize = TILE_SIZE * Math.pow(2, zoom); anchorX = left + width * .5; anchorY = top + height * .66;
             cosBearing = Math.cos(bearingRad); sinBearing = Math.sin(bearingRad);
-            cosTilt = Math.cos(Math.toRadians(35)); sinTilt = Math.sin(Math.toRadians(35)); focal = height * 1.6;
+            cosTilt = Math.cos(Math.toRadians(35)); sinTilt = Math.sin(Math.toRadians(35));
+            // A visible tile can extend beyond the viewport by one tile diagonal. Keep its
+            // farthest corner in front of the projection plane even on very short car surfaces.
+            double tileWorldSize = TILE_SIZE * Math.pow(2, zoom - Math.floor(zoom));
+            focal = Math.max(height * 1.6, tileWorldSize * 1.25);
         }
         /** Project an unwrapped world coordinate into this (possibly offset) viewport. */
         public boolean project(double x, double y, float[] output, int offset) {

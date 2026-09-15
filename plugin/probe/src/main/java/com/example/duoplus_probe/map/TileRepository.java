@@ -57,7 +57,7 @@ final class TileRepository {
                 return e == null || e.freshUntil <= SystemClock.elapsedRealtime() ? null : e.bitmap;
             }
         }
-        boolean failed(MapProjection.Tile tile) { synchronized (owner) { return owner.failures.containsKey(tile) || owner.globalRetryAt > SystemClock.elapsedRealtime(); } }
+        boolean failed(MapProjection.Tile tile) { synchronized (owner) { return owner.failures.containsKey(tile) || owner.dispatchGate.coolingDown(); } }
         void close() { release(this); }
     }
 
@@ -89,7 +89,8 @@ final class TileRepository {
     private final LinkedHashMap<MapProjection.Tile, Long> failures = new LinkedHashMap<>();
     private final Map<MapProjection.Tile, Fetch> pending = new HashMap<>();
     private final ThreadPoolExecutor executor;
-    private long memoryBytes, globalRetryAt;
+    private final TileDispatchGate dispatchGate = new TileDispatchGate(SystemClock::elapsedRealtime);
+    private long memoryBytes;
     private TileRepository(Context context) {
         this.context = context;
         executor = new ThreadPoolExecutor(2, 2, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<>(32), runnable -> {
@@ -107,7 +108,7 @@ final class TileRepository {
         for (MapProjection.VisibleTile tile : tiles) keys.add(tile.tile);
         lease.wanted = keys; cancelUnwantedLocked();
         long now = SystemClock.elapsedRealtime();
-        if (now < globalRetryAt) return;
+        if (dispatchGate.coolingDown()) return;
         for (MapProjection.VisibleTile visible : tiles) {
             MapProjection.Tile key = visible.tile;
             Entry entry = memory.get(key);
@@ -145,6 +146,7 @@ final class TileRepository {
     private final class Fetch implements Runnable {
         final MapProjection.Tile key;
         volatile boolean cancelled;
+        boolean deferred;
         Fetch(MapProjection.Tile key) { this.key = key; }
         private void checkActive() throws IOException {
             synchronized (TileRepository.this) {
@@ -155,6 +157,7 @@ final class TileRepository {
         @Override public void run() {
             HttpURLConnection connection = null; Entry result = null; long retry = 30_000;
             try {
+                if (dispatchGate.coolingDown()) { deferred = true; return; }
                 checkActive(); ensureHttpCache(); checkActive();
                 connection = (HttpURLConnection) new URL(TILE_URL + key + ".png").openConnection();
                 connection.setConnectTimeout(5000); connection.setReadTimeout(5000);
@@ -162,11 +165,14 @@ final class TileRepository {
                 connection.setRequestProperty("User-Agent", USER_AGENT);
                 connection.setRequestProperty("Accept", "image/png");
                 long deadline = SystemClock.elapsedRealtime() + 12_000;
-                int status = connection.getResponseCode();
+                // Another worker may have received Retry-After while this job was queued or
+                // installing the cache. Recheck directly at dispatch, outside the tile monitor.
+                Integer status = dispatchGate.dispatch(connection::getResponseCode);
+                if (status == null) { deferred = true; return; }
                 if (status != HttpURLConnection.HTTP_OK) {
                     if (status == 429 || status == 503 || status == 403) {
                         retry = Math.max(60_000, retryAfterMillis(connection));
-                        synchronized (TileRepository.this) { globalRetryAt = Math.max(globalRetryAt, SystemClock.elapsedRealtime() + retry); }
+                        dispatchGate.deferFor(retry);
                     }
                     throw new IOException("Tile HTTP " + status);
                 }
@@ -209,7 +215,7 @@ final class TileRepository {
         List<Runnable> notify = new ArrayList<>();
         synchronized (this) {
             if (pending.get(fetch.key) == fetch) pending.remove(fetch.key);
-            if (fetch.cancelled) return;
+            if (fetch.cancelled || fetch.deferred) return;
             if (result != null) {
                 Entry old = memory.put(fetch.key, result);
                 memoryBytes += result.bitmap.getAllocationByteCount() - (old == null ? 0 : old.bitmap.getAllocationByteCount());

@@ -112,7 +112,7 @@ public final class RouteMapRenderer implements AutoCloseable {
                     viewport.left, viewport.top, viewport.width(), viewport.height());
             List<MapProjection.VisibleTile> wanted = camera.visibleTiles();
             if (visible) tiles.want(wanted); else tiles.want(Collections.emptyList());
-            int loaded = 0; boolean failed = false;
+            int loaded = 0; boolean failed = false, renderRejected = false;
             paint.setColor(Color.WHITE);
             for (MapProjection.VisibleTile tile : wanted) {
                 Bitmap bitmap = tiles.get(tile.tile);
@@ -123,14 +123,13 @@ public final class RouteMapRenderer implements AutoCloseable {
                         && camera.project(x + size, y + size, corners, 4) && camera.project(x, y + size, corners, 6)
                         && tileMatrix.setPolyToPoly(source, 0, corners, 0, 4)) {
                     canvas.drawBitmap(bitmap, tileMatrix, paint); loaded++;
-                }
+                } else renderRejected = true;
             }
             drawRoute(canvas, camera);
             drawMarker(canvas, camera);
             boolean incomplete = loaded < wanted.size() || wanted.isEmpty() || wanted.size() >= MapProjection.MAX_VISIBLE_TILES;
             if (incomplete) {
-                String state = loaded > 0 ? "Basemap incomplete · route visible"
-                        : failed || wanted.isEmpty() ? "Basemap unavailable · route only" : "Loading basemap · route visible";
+                String state = incompleteBasemapLabel(loaded, failed || wanted.isEmpty(), renderRejected);
                 if (Math.abs(lat) > MapProjection.MAX_LATITUDE) state = "Polar position · map clamped at 85.05°";
                 label(canvas, viewport, state, true);
                 if (visible && !retryPosted) { retryPosted = true; main.postDelayed(retry, 30_000); }
@@ -138,6 +137,12 @@ public final class RouteMapRenderer implements AutoCloseable {
             else if (scenario != null && route == null) label(canvas, viewport, "Preparing route overlay", true);
             attribution(canvas, viewport);
         } finally { canvas.restoreToCount(saved); }
+    }
+
+    static String incompleteBasemapLabel(int drawnTiles, boolean unavailable, boolean renderRejected) {
+        if (drawnTiles > 0) return "Basemap incomplete · route visible";
+        if (renderRejected) return "Basemap cannot render · route only";
+        return unavailable ? "Basemap unavailable · route only" : "Loading basemap · route visible";
     }
 
     private void drawRoute(Canvas canvas, MapProjection.Camera camera) {

@@ -5,7 +5,7 @@ Validation date: 2026-09-15. Android package: `com.example.duoplus_probe`, versi
 ## Build and contracts
 
 - Clean Android build: passed with JDK 21, Gradle 8.7, AGP 8.6, compile/target SDK 34.
-- Probe JVM suite: 68 tests passed; no failures or skips.
+- Probe JVM suite: 75 tests passed; no failures or skips, including small-viewport projection and queued tile cooldown regressions.
 - Python suite and formal scenario/report contracts: 56 tests passed.
 - Existing local module suite: 26 tests passed. That optional loader/bridge module is not part of this standalone publication.
 - Lint: zero errors, 29 warnings. Warnings include pinned dependency versions, compatibility/deprecation guidance, static application-context ownership and layout recommendations. No lint baseline suppresses failures.
@@ -18,7 +18,7 @@ Observed portrait compact call strip and landscape 2:3 call/map panes. Demo prep
 
 Six AndroidX car-host checks passed on the device: templates/trip estimates, navigation ownership and host stop, dial intent, hidden-screen completion, surface replacement/destruction and host viewport bounds. Date-line catalog filtering and malformed/oversized import rejection passed. Direct-console recreation preserves the same prepared scenario at time zero without starting playback.
 
-The initial dial-intent check exposed a collapsed keypad and was fixed. Its prefill, permission and role assertions then passed; an ActivityScenario teardown issue is being checked separately. The ten-minute background timing measurement is also in progress. Final measured results will be recorded here after those checks finish.
+The initial dial-intent check exposed a collapsed keypad and was fixed. The harness now tracks activity identity across changed dial intents. An initial 600-second background run passed its continuous-playback checks but failed when the harness waited for a new Activity creation while Android reused an existing task; it did not save final metrics. The corrected harness observes actual RESUMED state and saves a timing checkpoint before the UI check. Final measured results will be recorded here after the repeated checks finish.
 
 The default dialer remains `com.android.dialer`; `CALL_PHONE` remains ungranted. Tests do not place calls or request a phone-role change.
 

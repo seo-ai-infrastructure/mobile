@@ -7,6 +7,12 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public final class RouteOverlayTest {
+    @Test public void cachedRenderRejectionIsDistinctFromLoadingAndNetworkFailure() {
+        assertEquals("Basemap cannot render · route only", RouteMapRenderer.incompleteBasemapLabel(0, false, true));
+        assertEquals("Loading basemap · route visible", RouteMapRenderer.incompleteBasemapLabel(0, false, false));
+        assertEquals("Basemap unavailable · route only", RouteMapRenderer.incompleteBasemapLabel(0, true, false));
+        assertEquals("Basemap incomplete · route visible", RouteMapRenderer.incompleteBasemapLabel(1, false, true));
+    }
     @Test public void longCrossingLineClipsBeforePerspective() {
         double[] out = new double[4];
         assertTrue(RouteMapRenderer.clipLine(-100, -100, 100, 100, 0, 0, 1, 1, out));
