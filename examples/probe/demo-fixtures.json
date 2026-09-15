@@ -2,32 +2,111 @@
   "schema": "hooking.fixtures",
   "version": 1,
   "profiles": {
-    "mount": [1, 0, 0, 0, 0, 1, 0, -1, 0],
-    "magnetic_enu_ut": [3, 20, -40],
+    "mount": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      -1,
+      0
+    ],
+    "magnetic_enu_ut": [
+      3,
+      20,
+      -40
+    ],
     "qnh_hpa": 1013.25,
     "noise": false,
-    "rates_hz": {"gnss": 1, "wifi": 0.1, "cell": 1, "ble": 1, "imu": 50, "magnetic": 10, "pressure": 1, "power": 1, "activity": 1}
+    "rates_hz": {
+      "gnss": 1,
+      "wifi": 0.1,
+      "cell": 1,
+      "ble": 1,
+      "imu": 50,
+      "magnetic": 10,
+      "pressure": 1,
+      "power": 1,
+      "activity": 1
+    }
   },
   "events": {
     "fix": [
-      {"t_ms": 0, "valid": true},
-      {"t_ms": 150000, "valid": false},
-      {"t_ms": 180000, "valid": true},
-      {"t_ms": 470000, "valid": false},
-      {"t_ms": 490000, "valid": true}
+      {
+        "t_ms": 0,
+        "valid": true
+      },
+      {
+        "t_ms": 150000,
+        "valid": false
+      },
+      {
+        "t_ms": 180000,
+        "valid": true
+      },
+      {
+        "t_ms": 470000,
+        "valid": false
+      },
+      {
+        "t_ms": 490000,
+        "valid": true
+      }
     ],
     "activity": [
-      {"t_ms": 0, "type": "STILL", "cadence_hz": 0},
-      {"t_ms": 60000, "type": "IN_VEHICLE", "cadence_hz": 0},
-      {"t_ms": 300000, "type": "STILL", "cadence_hz": 0},
-      {"t_ms": 360000, "type": "WALKING", "cadence_hz": 1.8},
-      {"t_ms": 600000, "type": "STILL", "cadence_hz": 0}
+      {
+        "t_ms": 0,
+        "type": "IN_VEHICLE",
+        "cadence_hz": 0
+      },
+      {
+        "t_ms": 60000,
+        "type": "IN_VEHICLE",
+        "cadence_hz": 0
+      },
+      {
+        "t_ms": 300000,
+        "type": "STILL",
+        "cadence_hz": 0
+      },
+      {
+        "t_ms": 360000,
+        "type": "WALKING",
+        "cadence_hz": 1.8
+      },
+      {
+        "t_ms": 600000,
+        "type": "STILL",
+        "cadence_hz": 0
+      }
     ],
     "power": [
-      {"t_ms": 0, "battery_pct": 80, "charging": false, "thermal_status": "NONE"},
-      {"t_ms": 180000, "battery_pct": 79, "charging": false, "thermal_status": "LIGHT"},
-      {"t_ms": 300000, "battery_pct": 78, "charging": true, "thermal_status": "LIGHT"},
-      {"t_ms": 600000, "battery_pct": 83, "charging": true, "thermal_status": "NONE"}
+      {
+        "t_ms": 0,
+        "battery_pct": 80,
+        "charging": false,
+        "thermal_status": "NONE"
+      },
+      {
+        "t_ms": 180000,
+        "battery_pct": 79,
+        "charging": false,
+        "thermal_status": "LIGHT"
+      },
+      {
+        "t_ms": 300000,
+        "battery_pct": 78,
+        "charging": true,
+        "thermal_status": "LIGHT"
+      },
+      {
+        "t_ms": 600000,
+        "battery_pct": 83,
+        "charging": true,
+        "thermal_status": "NONE"
+      }
     ]
   },
   "warnings": [

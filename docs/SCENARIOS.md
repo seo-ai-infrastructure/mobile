@@ -1,12 +1,12 @@
-# Standalone multisensor scenarios
+# Hooking scenarios
 
 The probe plays local, visibly labeled fixtures inside `com.example.duoplus_probe`.
 It can run without the DuoPlus loader. Scenario data stays in probe-owned data
 objects; it does not set Android location, radio, sensor or battery providers.
-The existing `hooks_cli.py` v1 bridge and Hook diagnostics screen remain a
-separate workflow.
+The optional legacy DuoPlus module is a different binary. The normal APK has no
+hook diagnostics or bridge dependency.
 
-Open **DuoPlus Simulator → Import JSON** and choose a scenario from the document picker. **Load demo** uses fictional bundled data.
+Open **Hooking → Import JSON** and choose a scenario from the document picker. **Load demo** uses fictional bundled data.
 
 ## Build, validate and preview
 
@@ -32,14 +32,14 @@ JSON. It writes the complete scenario atomically with file mode `600`. `preview`
 shows a bounded number of trajectory knots, not an expanded array of IMU ticks.
 
 The bundled copy is
-`plugin/probe/src/main/assets/demo-scenario.json`. It is byte-identical to the
+`plugin/app/src/main/assets/demo-scenario.json`. It is byte-identical to the
 public example. Regenerating the example does not automatically update an
 already built APK; update the bundled file and rebuild the probe when changing
 the example. The demo is 660 seconds long:
 
 | Scenario time | Fixture behavior |
 | --- | --- |
-| 0–60 s | Stopped |
+| 0–60 s | Driving immediately toward the loop |
 | 60–300 s | Driving around a small loop with turns |
 | 150–180 s | Deliberate invalid GNSS fix |
 | 300–360 s | Stopped; charging begins |
@@ -139,6 +139,39 @@ Alternatively, use `--catalog PATH` for either supported local format:
 2. The normalized scenario `catalog` object: `source`, `complete`,
    `observed_at`, `records`, and optional `catalog_checked_at`. A standalone
    wrapper may additionally declare `schema:"hooking.catalog", version:1`.
+3. Observatory's normalized `WigleUploadData` version 1, or the saved-upload GET
+   response `{ "upload": { "data": ... } }` (including its upload summary).
+
+For an Observatory download, use the existing compiler with a local route:
+
+```sh
+python3 -B scenario_cli.py build \
+  --route examples/probe/demo-route.geojson \
+  --catalog observatory-upload.json --output my-survey-scenario.json
+```
+
+The resulting file uses the same `hooking.scenario` v1 schema and the probe's
+existing **Import JSON** action. The timestamped example route is a simulated
+journey; replace it with your own route where needed. Untimed routes still need
+`--speed-mps`. A catalog download by itself is not a playable scenario.
+
+The adapter maps `WIFI/CELL/BLUETOOTH` to `wifi/cell/ble`, `identifier` to the opaque
+radio ID, and `lng` to longitude. It retains SSIDs, frequency, channel, observation
+dates, radio/technology, encryption, comments, and opaque attributes with survey
+provenance. Bluetooth metadata is preserved under `fields.bluetooth`; an observed
+Bluetooth name also supplies `fields.name`. Missing sensor fields/channels continue
+to receive explicitly labeled examples. Raw provider envelopes and saved site IDs
+are not copied into the scenario.
+
+Observatory `queriedAt` supplies `catalog_checked_at`; unknown query time remains
+unknown. Record observation dates remain `firsttime`, `lasttime`, and `lastupdt`.
+Wrapper `importedAt` is retained in a warning as file-import metadata, never used
+as a query/observation timestamp. Coverage always remains `complete:false`;
+pagination, rejection, and duplicate warnings are retained. The adapter accepts at
+most 1,000 records per Observatory upload before deduplication, matching that
+format's limit. Existing 16 MiB input and 10,000-record scenario limits still apply.
+Malformed versions, fields, coordinates, dates, numeric values, or Bluetooth
+metadata are rejected. This import reads local files and never fetches more pages.
 
 A bare provider `results` response without a declared record kind is not
 accepted; wrap it in a supported WiGLE library envelope first.
@@ -181,7 +214,7 @@ The B-tree fallback also rejects `(trajectory points − 1) × catalog records`
 above 2,000,000 before building the index, bounding its worst-case work. Rejected
 imports must be split or shortened; records are not silently dropped to fit.
 The selected index and fallback warning are shown by the service. These details
-are implemented in [ScenarioCatalog.java](../plugin/probe/src/main/java/com/example/duoplus_probe/ScenarioCatalog.java).
+are implemented in [ScenarioCatalog.java](../plugin/app/src/main/java/com/example/duoplus_probe/ScenarioCatalog.java).
 
 Playback uses the prepared in-memory catalog; it does not issue per-tick
 database queries or live scans. Visibility and scripted connections are
@@ -198,6 +231,7 @@ GNSS satellites and radio connections; it labels any generated defaults.
 
 | Channel | Default rate | Units and behavior |
 | --- | ---: | --- |
+| `pose` | 10 Hz, fixed | Dispatcher publication for the phone and Auto map |
 | `gnss` | 1 Hz, fixed | GPS position, NMEA and satellite status share one epoch |
 | `wifi` | 0.1 Hz | Catalog visibility; RSSI in dBm |
 | `cell`, `ble` | 1 Hz | Catalog visibility and independent connection fixtures |
@@ -239,8 +273,7 @@ up      =  up
 
 The stationary accelerometer support component is +Up `9.80665 m/s²` before
 the mount transform. The engine publishes `gravity_mps2`,
-`linear_accel_mps2`, `accelerometer_mps2` and `gyro_rads` separately. Without
-optional measurement noise, accelerometer equals gravity plus linear
+`linear_accel_mps2`, `accelerometer_mps2` and `gyro_rads` separately. V1 IMU noise is zero; accelerometer equals gravity plus linear
 acceleration wherever the derivative is defined. Yaw rate about +Up is
 `−d(heading)/dt`, because heading increases clockwise.
 
@@ -297,10 +330,39 @@ kind. They represent explicit test states, not Android association, serving-cell
 selection, received BLE advertisements or GATT connections.
 
 `events.power` holds `battery_pct`, `charging` and `thermal_status` until the next
-event. `events.activity` holds an activity and cadence in steps/second. Only
-WALKING and RUNNING have nonzero cadence. The cumulative step counter integrates
-cadence over half-open activity intervals; a delivery gap does not reset it or
-invent a new walking session. It is independent from IMU waveform generation.
+event. `events.activity` holds an activity. A supplied STILL interval must have no
+positive-duration overlap with a moving route segment: horizontal distance above
+the `1e-8 m` numerical-zero tolerance or any changed MSL altitude counts as movement.
+Intervals are half-open, so a stop ending exactly when movement starts is valid;
+a terminal STILL event has no interval beyond the scenario. Dwells remain valid.
+Omitting an activity script keeps the existing IN_VEHICLE example default.
+
+An optional explicit step script supplies the counter independently from activity
+cadence and IMU values:
+
+```json
+"steps": {
+  "start": 100,
+  "deltas": [{ "t_ms": 500, "delta": 1 }, { "t_ms": 1000, "delta": 2 }]
+}
+```
+
+Place this object under `events` in a scenario or fixtures file. At scene time
+`t`, the counter is `start + sum(delta where t_ms <= t)`: the example shows 100
+before 500 ms, 101 at 500 ms, and 103 at 1000 ms. `start` is a nonnegative integer;
+each delta is a positive integer. Delta offsets are strictly increasing within
+`0..duration_ms`; the first delta may occur after zero, and an empty delta array
+is valid. At most 100,000 deltas are accepted, and the total including `start`
+must remain at most `9007199254740991` (`2^53−1`). No steps are inferred between
+explicit offsets. Presence of `events.steps` makes it the sole counter source:
+every activity `cadence_hz` must be zero, otherwise validation fails as ambiguous.
+The CLI event summary reports the number of delta entries.
+
+When `events.steps` is absent, legacy cadence remains supported: only WALKING and
+RUNNING can have nonzero `cadence_hz`. The counter integrates cadence over
+half-open activity intervals. Delivery gaps do not reset either counter source
+or invent a new walking session. All counters remain scene data rendered/logged
+inside Hooking; they are not published to Android step sensors.
 
 ## Playback, background behavior and clocks
 
@@ -309,7 +371,8 @@ owns one monotonic scheduler; the UI displays snapshots and has Import, Start,
 Pause, Stop and Restart controls. Background playback uses a persistent
 foreground-service notification, with a partial wake lock only while playing.
 Pause/Stop and completion release it. Process death does not automatically
-restart or resume playback. Hook diagnostics remains a separate screen.
+restart or resume playback. See [dispatcher routing](DISPATCHER.md) and
+[normal Android packaging](PACKAGING.md).
 
 There are three explicit clock values:
 
@@ -335,7 +398,9 @@ access the network. A wake lock and timer do not establish hard real-time rates.
   the compiler's supported date range.
 - Scenario name: nonempty, at most 200 characters. Radio IDs: at most 512.
 - JSON nesting: at most 32 levels overall and 16 within a radio fields object.
-- Per-channel events: nonempty if present, starting at zero and strictly ordered.
+- State-event arrays: nonempty if present, starting at zero and strictly ordered.
+- Optional step object: at most 100,000 strictly ordered positive deltas within
+  the scenario, with a nonnegative start and safe-integer cumulative total.
 - In-memory delivered-frame history: at most 2048 frames; exports describe
   delivered/skipped counts and model assumptions.
 
@@ -373,7 +438,7 @@ python3 -B -m unittest discover -s tests -p 'test_hooks_cli.py' -v
 .venv/bin/python -B -m unittest discover -s tests -p 'test_artifact_schemas.py' -v
 
 # Android/JVM checks are local builds; no device installation is implied.
-./plugin/build.sh :probe:assembleDebug :probe:testDebugUnitTest :probe:lintDebug
+./plugin/build.sh :app:assembleProbeDebug :app:testProbeDebugUnitTest :app:lintProbeDebug
 ```
 
 Host/schema tests do not prove on-device background delivery. Device acceptance
@@ -381,3 +446,9 @@ separately checks notification controls, screen-off continuation, UI reattachmen
 process-death behavior, per-channel delivery/skip counters, import failures and
 report export. A passing check never establishes acceptance by a consumer app or
 provider; playback data is confined to this probe.
+
+The fixed 10 Hz `pose` publication is shared by phone and Auto. Matching GPS, NMEA
+and satellite epochs come from one `renderGps(scene)` evaluation. New report
+frames include `scene_elapsed_ns` (original boot origin plus scene offset),
+`synthetic_utc_ms` and shared fix validity. Device deadlines remain pause-adjusted.
+Cellular RSSI is unavailable in v1; source cellular fields stay opaque.

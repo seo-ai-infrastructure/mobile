@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = 'Hooking'
-include ':probe'
+include ':app'

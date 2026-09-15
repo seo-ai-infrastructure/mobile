@@ -1,69 +1,279 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:hooking:report:1",
-  "title": "Hooking standalone probe report v1",
-  "type": "object", "additionalProperties": false,
-  "required": ["schema", "version", "simulated", "snapshot", "history", "metrics", "models"],
+  "title": "Hooking report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "simulated",
+    "snapshot",
+    "history",
+    "metrics",
+    "models"
+  ],
   "properties": {
-    "schema": {"const": "hooking.report"}, "version": {"const": 1}, "simulated": {"const": true},
-    "snapshot": {"$ref": "#/$defs/snapshot"},
-    "history": {"type": "array", "maxItems": 2048, "items": {"$ref": "#/$defs/frame"}},
-    "metrics": {
-      "type": "object", "additionalProperties": false,
-      "required": ["delivered", "skipped", "max_lateness_ms", "mean_lateness_ms", "history_evicted", "channels"],
-      "properties": {
-        "delivered": {"$ref": "#/$defs/count"}, "skipped": {"$ref": "#/$defs/count"},
-        "max_lateness_ms": {"type": "number", "minimum": 0}, "mean_lateness_ms": {"type": "number", "minimum": 0},
-        "history_evicted": {"$ref": "#/$defs/count"},
-        "channels": {"type": "object", "additionalProperties": {"$ref": "#/$defs/channelMetrics"}}
+    "schema": {
+      "const": "hooking.report"
+    },
+    "version": {
+      "const": 1
+    },
+    "simulated": {
+      "const": true
+    },
+    "snapshot": {
+      "$ref": "#/$defs/snapshot"
+    },
+    "history": {
+      "type": "array",
+      "maxItems": 2048,
+      "items": {
+        "$ref": "#/$defs/frame"
       }
     },
-    "models": {"type": "object", "description": "Explicit model/interpolation, provenance and clock-domain descriptions; does not assert observed hardware behavior."},
-    "catalog_preparation": {
-      "type": "object", "additionalProperties": false,
-      "description": "Android adapter preparation evidence; omitted by engine-only reports.",
-      "required": ["source_records", "corridor_records", "index", "warning"],
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "delivered",
+        "skipped",
+        "max_lateness_ms",
+        "mean_lateness_ms",
+        "history_evicted",
+        "channels"
+      ],
       "properties": {
-        "source_records": {"type": "integer", "minimum": 0, "maximum": 10000},
-        "corridor_records": {"type": "integer", "minimum": 0, "maximum": 10000},
-        "index": {"enum": ["sqlite_rtree", "sqlite_bbox_btree"]},
-        "warning": {"type": "string"}
+        "delivered": {
+          "$ref": "#/$defs/count"
+        },
+        "skipped": {
+          "$ref": "#/$defs/count"
+        },
+        "max_lateness_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "mean_lateness_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "history_evicted": {
+          "$ref": "#/$defs/count"
+        },
+        "channels": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/channelMetrics"
+          }
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "description": "Explicit model/interpolation, provenance and clock-domain descriptions; does not assert observed hardware behavior."
+    },
+    "catalog_preparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Android adapter preparation evidence; omitted by engine-only reports.",
+      "required": [
+        "source_records",
+        "corridor_records",
+        "index",
+        "warning"
+      ],
+      "properties": {
+        "source_records": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "corridor_records": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "index": {
+          "enum": [
+            "sqlite_rtree",
+            "sqlite_bbox_btree"
+          ]
+        },
+        "warning": {
+          "type": "string"
+        }
       }
     }
   },
   "$defs": {
-    "count": {"type": "integer", "minimum": 0},
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
     "frame": {
-      "type": "object", "additionalProperties": false,
-      "required": ["channel", "sequence", "scenario_ms", "sample_elapsed_ns", "delivered_elapsed_ns", "lateness_ms", "simulated", "values", "provenance"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channel",
+        "sequence",
+        "scenario_ms",
+        "sample_elapsed_ns",
+        "delivered_elapsed_ns",
+        "lateness_ms",
+        "simulated",
+        "values",
+        "provenance"
+      ],
       "properties": {
-        "channel": {"enum": ["gnss", "wifi", "cell", "ble", "imu", "magnetic", "pressure", "power", "activity"]},
-        "sequence": {"$ref": "#/$defs/count"},
-        "scenario_ms": {"type": "number", "minimum": 0, "description": "Logical scenario offset milliseconds; may be fractional at configured rates."},
-        "sample_elapsed_ns": {"type": "integer", "minimum": 0, "description": "Scheduled device boot-clock timestamp mapped through start/resume anchors."},
-        "delivered_elapsed_ns": {"type": "integer", "minimum": 0, "description": "Actual elapsedRealtimeNanos reading at delivery; never fabricated jitter."},
-        "lateness_ms": {"type": "number", "minimum": 0}, "simulated": {"const": true},
-        "values": {"type": "object"}, "provenance": {"type": ["object", "string"]}
+        "channel": {
+          "enum": [
+            "gnss",
+            "wifi",
+            "cell",
+            "ble",
+            "imu",
+            "magnetic",
+            "pressure",
+            "power",
+            "activity",
+            "pose"
+          ]
+        },
+        "sequence": {
+          "$ref": "#/$defs/count"
+        },
+        "scenario_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Logical scenario offset milliseconds; may be fractional at configured rates."
+        },
+        "sample_elapsed_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Scheduled device boot-clock timestamp mapped through start/resume anchors."
+        },
+        "delivered_elapsed_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Actual elapsedRealtimeNanos reading at delivery; never fabricated jitter."
+        },
+        "lateness_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "simulated": {
+          "const": true
+        },
+        "values": {
+          "type": "object"
+        },
+        "provenance": {
+          "type": [
+            "object",
+            "string"
+          ]
+        },
+        "scene_elapsed_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Synthetic location-like epoch: original start boot nanoseconds + scenario offset. Pauses excluded; not an OS sensor timestamp."
+        },
+        "synthetic_utc_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Scenario UTC origin + scene offset, never the device wall clock."
+        },
+        "valid": {
+          "type": "boolean",
+          "description": "Shared fix validity for this scene offset, including satellite fixture sufficiency."
+        }
       }
     },
     "snapshot": {
-      "type": "object", "additionalProperties": false,
-      "required": ["state", "name", "scenario_ms", "duration_ms", "frames", "delivered", "skipped", "warnings", "simulated"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "name",
+        "scenario_ms",
+        "duration_ms",
+        "frames",
+        "delivered",
+        "skipped",
+        "warnings",
+        "simulated"
+      ],
       "properties": {
-        "state": {"enum": ["READY", "RUNNING", "PAUSED", "STOPPED", "COMPLETED"]},
-        "name": {"type": "string"}, "scenario_ms": {"type": "number", "minimum": 0},
-        "duration_ms": {"type": "integer", "minimum": 1, "maximum": 86400000},
-        "frames": {"type": "object", "additionalProperties": {"$ref": "#/$defs/frame"}},
-        "delivered": {"$ref": "#/$defs/count"}, "skipped": {"$ref": "#/$defs/count"},
-        "warnings": {"type": "array", "items": {"type": "string"}}, "simulated": {"const": true}
+        "state": {
+          "enum": [
+            "READY",
+            "RUNNING",
+            "PAUSED",
+            "STOPPED",
+            "COMPLETED"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "scenario_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000
+        },
+        "frames": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/frame"
+          }
+        },
+        "delivered": {
+          "$ref": "#/$defs/count"
+        },
+        "skipped": {
+          "$ref": "#/$defs/count"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "simulated": {
+          "const": true
+        }
       }
     },
     "channelMetrics": {
-      "type": "object", "additionalProperties": false,
-      "required": ["delivered", "skipped", "max_lateness_ms", "mean_lateness_ms"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "delivered",
+        "skipped",
+        "max_lateness_ms",
+        "mean_lateness_ms"
+      ],
       "properties": {
-        "delivered": {"$ref": "#/$defs/count"}, "skipped": {"$ref": "#/$defs/count"},
-        "max_lateness_ms": {"type": "number", "minimum": 0}, "mean_lateness_ms": {"type": "number", "minimum": 0}
+        "delivered": {
+          "$ref": "#/$defs/count"
+        },
+        "skipped": {
+          "$ref": "#/$defs/count"
+        },
+        "max_lateness_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "mean_lateness_ms": {
+          "type": "number",
+          "minimum": 0
+        }
       }
     }
   }

@@ -15,6 +15,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 import tempfile
@@ -30,6 +31,8 @@ MAX_POINTS = 100000
 MAX_RADIOS = 10000
 MAX_DURATION_MS = 24 * 60 * 60 * 1000
 MAX_UTC_ORIGIN_MS = 253402214399999  # Keep a full 24-hour scenario inside year 9999.
+MAX_STEP_COUNT = 9007199254740991
+MAX_STEP_DELTAS = 100000
 KINDS = {"wifi", "cell", "ble"}
 PROVENANCE = {"survey", "example", "modeled"}
 ACTIVITIES = {"STILL", "IN_VEHICLE", "WALKING", "RUNNING", "ON_BICYCLE"}
@@ -222,7 +225,164 @@ def survey_number(value: Any, name: str) -> float:
     return finite_number(value, name)
 
 
+def observatory_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Adapt the saved Observatory v1 payload; provider responses are never exported."""
+    warnings: list[str] = []
+
+    def count(value: Any, name: str, maximum: int = 9007199254740991) -> int:
+        return integer(value, name, 0, maximum)
+
+    def text(value: Any, name: str, maximum: int = 4096) -> str:
+        value = text_value(value, name, maximum, allow_empty=True)
+        try:
+            size = len(value.encode("utf-8"))
+        except UnicodeError as exc:
+            raise ScenarioError(f"invalid Observatory {name}") from exc
+        require(size <= maximum and not re.search(r"[\x00-\x1f\x7f-\x9f]", value),
+                f"invalid Observatory {name}")
+        return value
+
+    def date(value: Any, name: str) -> str | None:
+        if value is None:
+            return None
+        value = text_value(value, name, 64)
+        require(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})", value) is not None,
+                f"invalid Observatory {name}")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            require(parsed.utcoffset() is not None, f"Observatory {name} requires a timezone")
+        except ValueError as exc:
+            raise ScenarioError(f"invalid Observatory {name}") from exc
+        return value
+
+    if "upload" in document:
+        keys_match(document, {"upload"}, set(), "Observatory response")
+        upload = document["upload"]
+        require(isinstance(upload, dict), "Observatory upload must be an object")
+        keys_match(upload, {"data"}, {"id", "filename", "importedAt", "wifiCount", "cellCount", "bluetoothCount",
+                                      "rejectedCount", "duplicateCount"}, "Observatory upload")
+        for name in ("id", "filename"):
+            if name in upload:
+                text_value(upload[name], f"upload {name}", 512)
+        for name in ("wifiCount", "cellCount", "bluetoothCount", "rejectedCount", "duplicateCount"):
+            if name in upload:
+                count(upload[name], f"upload {name}")
+        if "importedAt" in upload:
+            imported_at = date(upload["importedAt"], "import time")
+            require(imported_at is not None, "Observatory import time must not be null")
+            warnings.append(f"Observatory file import time: {imported_at}; not an observation or query time.")
+        document = upload["data"]
+
+    require(isinstance(document, dict), "Observatory data must be an object")
+    keys_match(document, {"version", "records", "rejectedCount", "duplicateCount", "warnings", "page", "queriedAt"},
+               {"query", "rawResponses"}, "Observatory data")
+    require(type(document["version"]) is int and document["version"] == 1, "unsupported Observatory data version")
+    rows = document["records"]
+    require(isinstance(rows, list) and len(rows) <= 1000, "Observatory upload must have at most 1000 records before deduplication")
+    rejected = count(document["rejectedCount"], "rejectedCount")
+    duplicates = count(document["duplicateCount"], "duplicateCount")
+    supplied_warnings = document["warnings"]
+    require(isinstance(supplied_warnings, list) and len(supplied_warnings) <= 1000, "invalid Observatory warnings")
+    warnings.extend("Observatory: " + text(value, "warning") for value in supplied_warnings)
+    warnings.append(f"Observatory source retained {len(rows)} records; previously rejected {rejected} and deduplicated {duplicates}. Coverage remains incomplete.")
+    page = document["page"]
+    require(isinstance(page, dict), "Observatory page must be an object")
+    keys_match(page, {"totalResults", "resultCount", "first", "last", "hasCursor"}, set(), "Observatory page")
+    require(type(page["hasCursor"]) is bool, "Observatory hasCursor must be boolean")
+    for name in ("totalResults", "resultCount", "first", "last"):
+        if page[name] is not None:
+            count(page[name], f"page {name}")
+    if page["hasCursor"] or (page["totalResults"] is not None and page["totalResults"] > len(rows)):
+        warnings.append("Observatory saved data is a partial search/page; no missing pages were fetched.")
+    queried_at = date(document["queriedAt"], "query time")
+    if "query" in document:
+        query = document["query"]
+        require(isinstance(query, dict), "Observatory query must be an object")
+        keys_match(query, {"siteId", "queriedAt", "endpoint", "anchor"}, set(), "Observatory query")
+        text_value(query["siteId"], "query site ID", 200)
+        require(query["endpoint"] in ("network/search", "cell/search", "bluetooth/search"), "unsupported Observatory query endpoint")
+        require(date(query["queriedAt"], "saved query time") == queried_at and queried_at is not None,
+                "Observatory query timestamps disagree")
+        anchor = query["anchor"]
+        require(isinstance(anchor, dict), "Observatory query anchor must be an object")
+        keys_match(anchor, {"lat", "lng"}, set(), "Observatory query anchor")
+        bounded_number(anchor["lat"], "query latitude", -90, 90)
+        bounded_number(anchor["lng"], "query longitude", -180, 180)
+    if "rawResponses" in document:
+        responses = document["rawResponses"]
+        require(isinstance(responses, list) and 1 <= len(responses) <= 3, "invalid Observatory raw response count")
+        for response in responses:
+            require(isinstance(response, dict) and response.get("success") is True and isinstance(response.get("results"), list)
+                    and len(response["results"]) <= 1000, "invalid Observatory raw response envelope")
+            finite_tree(response, limit=16)
+
+    records = []
+    required = {"kind", "identifier", "ssid", "lat", "lng", "qos", "firstSeen", "lastSeen", "lastUpdated",
+                "radio", "attributes", "channel", "encryption"}
+    kinds = {"WIFI": "wifi", "CELL": "cell", "BLUETOOTH": "ble"}
+    for row in rows:
+        require(isinstance(row, dict), "Observatory record must be an object")
+        keys_match(row, required, {"wifiType", "frequencyMHz", "comment", "bluetooth"}, "Observatory record")
+        require(isinstance(row["kind"], str) and row["kind"] in kinds, "unsupported Observatory radio kind")
+        kind = kinds[row["kind"]]
+        identity = text(row["identifier"], "radio identifier", 512)
+        require(bool(identity.strip()), "Observatory radio identifier must not be empty")
+        latitude = bounded_number(row["lat"], "Observatory latitude", -90, 90)
+        longitude = bounded_number(row["lng"], "Observatory longitude", -180, 180)
+        fields: dict[str, Any] = {}
+        for source, target, limit in (("ssid", "ssid", 32 if kind == "wifi" else 256), ("radio", "radio", 256),
+                                      ("attributes", "attributes", 1024), ("encryption", "encryption", 256)):
+            if row[source] is not None:
+                fields[target] = text(row[source], source, limit)
+        if kind == "cell" and row["radio"] is not None:
+            fields["technology"] = fields["radio"]
+        for source, target in (("firstSeen", "firsttime"), ("lastSeen", "lasttime"), ("lastUpdated", "lastupdt")):
+            value = date(row[source], source)
+            if value is not None:
+                fields[target] = value
+        for name, maximum in (("qos", 7), ("channel", 9007199254740991)):
+            if row[name] is not None:
+                fields[name] = count(row[name], name, maximum)
+        require(kind == "wifi" or not ({"wifiType", "frequencyMHz", "comment"} & set(row)), "Wi-Fi fields on a non-Wi-Fi record")
+        for source, target, maximum in (("wifiType", "type", 256), ("comment", "comment", 1024)):
+            if source in row:
+                fields[target] = text(row[source], source, maximum)
+        if row.get("frequencyMHz") is not None:
+            fields["frequency_mhz"] = count(row["frequencyMHz"], "frequencyMHz", 100000)
+        if "bluetooth" in row:
+            require(kind == "ble" and isinstance(row["bluetooth"], dict), "invalid Observatory Bluetooth metadata")
+            bluetooth = row["bluetooth"]
+            keys_match(bluetooth, {"name", "manufacturerId", "deviceClass", "capabilities"}, set(), "Observatory Bluetooth")
+            if bluetooth["name"] is not None:
+                fields["name"] = text(bluetooth["name"], "Bluetooth name", 256)
+            for name, maximum in (("manufacturerId", 65535), ("deviceClass", 0xffffff)):
+                if bluetooth[name] is not None:
+                    count(bluetooth[name], f"Bluetooth {name}", maximum)
+            if bluetooth["capabilities"] is not None:
+                require(isinstance(bluetooth["capabilities"], list) and len(bluetooth["capabilities"]) <= 64,
+                        "invalid Observatory Bluetooth capabilities")
+                for capability in bluetooth["capabilities"]:
+                    text(capability, "Bluetooth capability", 256)
+            fields["bluetooth"] = deepcopy(bluetooth)
+        record = {"kind": kind, "id": identity, "lat": latitude, "lon": longitude, "fields": fields,
+                  "provenance": {key: "survey" for key in ("id", "lat", "lon", *fields)}}
+        if queried_at is not None:
+            record["catalog_checked_at"] = queried_at
+        records.append(record)
+    catalog = {"source": "Observatory saved WiGLE observations", "complete": False, "observed_at": None, "records": records}
+    if queried_at is not None:
+        catalog["catalog_checked_at"] = queried_at
+    else:
+        warnings.append("Observatory query time is unknown; file import time is not used as a substitute.")
+    warnings.append("Survey coordinates are catalog observations, not verified transmitter positions. Cellular identifiers and attributes remain opaque.")
+    validate_catalog(catalog)
+    return deduplicate_catalog(catalog, warnings), warnings
+
+
 def import_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    require(isinstance(document, dict), "catalog must be an object")
+    if "upload" in document or ("schema" not in document and any(key in document for key in ("queriedAt", "rejectedCount", "duplicateCount", "page"))):
+        return observatory_catalog(document)
     warnings: list[str] = []
     if "records" in document:
         if "schema" in document:
@@ -480,9 +640,12 @@ def validate_profiles(profiles: Any) -> None:
 
 def validate_events(events: Any, duration: int, records: list[dict[str, Any]]) -> None:
     require(isinstance(events, dict), "events must be an object")
-    require(set(events) <= {"fix", "activity", "power", "gnss", "connections"}, "unknown event type")
+    require(set(events) <= {"fix", "activity", "power", "gnss", "connections", "steps"}, "unknown event type")
     ids = {kind: {record["id"] for record in records if record["kind"] == kind} for kind in KINDS}
     for kind, epochs in events.items():
+        if kind == "steps":
+            validate_steps(epochs, duration)
+            continue
         require(isinstance(epochs, list) and 1 <= len(epochs) <= MAX_POINTS, "present event epochs must be a nonempty bounded array")
         previous = -1
         for epoch in epochs:
@@ -500,6 +663,8 @@ def validate_events(events: Any, duration: int, records: list[dict[str, Any]]) -
                 cadence = bounded_number(epoch.get("cadence_hz"), "cadence_hz", 0, 10)
                 require(epoch["type"] in ("WALKING", "RUNNING") or cadence == 0,
                         "only WALKING and RUNNING have a step cadence")
+                require("steps" not in events or cadence == 0,
+                        "explicit steps and nonzero activity cadence are ambiguous")
             elif kind == "power":
                 keys_match(epoch, {"t_ms", "battery_pct", "charging", "thermal_status"}, set(), "power event")
                 bounded_number(epoch.get("battery_pct"), "battery_pct", 0, 100)
@@ -538,6 +703,45 @@ def validate_events(events: Any, duration: int, records: list[dict[str, Any]]) -
                         require(finite_number(satellite["carrier_hz"], "carrier_hz") > 0, "carrier_hz must be positive")
 
 
+def validate_steps(script: Any, duration: int) -> None:
+    require(isinstance(script, dict), "steps must be an object")
+    keys_match(script, {"start", "deltas"}, set(), "steps")
+    total = integer(script["start"], "steps start", 0, MAX_STEP_COUNT)
+    deltas = script["deltas"]
+    require(isinstance(deltas, list) and len(deltas) <= MAX_STEP_DELTAS,
+            "steps deltas must be an array of at most 100000 events")
+    previous = -1
+    for event in deltas:
+        require(isinstance(event, dict), "step delta must be an object")
+        keys_match(event, {"t_ms", "delta"}, set(), "step delta")
+        moment = integer(event["t_ms"], "step t_ms", 0, duration)
+        require(moment > previous, "step delta times must strictly increase")
+        previous = moment
+        total += integer(event["delta"], "step delta", 1, MAX_STEP_COUNT)
+        require(total <= MAX_STEP_COUNT, "cumulative steps exceed the safe integer limit")
+
+
+def validate_still_trajectory(trajectory: list[dict[str, Any]], activities: list[dict[str, Any]]) -> None:
+    """Check half-open overlaps in O(route knots + activity epochs), without sampling."""
+    segment = 0
+    for index, activity in enumerate(activities):
+        if activity["type"] != "STILL":
+            continue
+        start = activity["t_ms"]
+        end = activities[index + 1]["t_ms"] if index + 1 < len(activities) else trajectory[-1]["t_ms"]
+        while segment < len(trajectory) - 2 and trajectory[segment + 1]["t_ms"] <= start:
+            segment += 1
+        while segment < len(trajectory) - 1 and start < end and trajectory[segment]["t_ms"] < end:
+            a, b = trajectory[segment], trajectory[segment + 1]
+            if max(start, a["t_ms"]) < min(end, b["t_ms"]):
+                moved = distance_m(Point(a["lat"], a["lon"]), Point(b["lat"], b["lon"])) > 1e-8
+                require(not moved and a["alt_msl_m"] == b["alt_msl_m"],
+                        "STILL activity overlaps moving trajectory (position or MSL altitude)")
+            if b["t_ms"] >= end:
+                break
+            segment += 1
+
+
 def validate_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
     finite_tree(scenario)
     require(isinstance(scenario, dict), "scenario must be an object")
@@ -572,6 +776,7 @@ def validate_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
     require(len({(record["kind"], record["id"]) for record in records}) == len(records), "catalog IDs must be unique within each kind")
     validate_profiles(scenario.get("profiles", {}))
     validate_events(scenario.get("events", {}), previous, records)
+    validate_still_trajectory(trajectory, scenario.get("events", {}).get("activity", []))
     warnings = scenario.get("warnings", [])
     require(isinstance(warnings, list), "warnings must be an array")
     for warning in warnings:
@@ -590,7 +795,8 @@ def summary(scenario: dict[str, Any]) -> dict[str, Any]:
                         "records": {kind: sum(record["kind"] == kind for record in records) for kind in sorted(KINDS)},
                         "survey_records": sum(record["provenance"].get("id") == "survey" for record in records),
                         "example_records": sum(record["provenance"].get("id") == "example" for record in records)},
-            "events": {kind: len(epochs) for kind, epochs in scenario.get("events", {}).items()},
+            "events": {kind: len(epochs["deltas"]) if kind == "steps" else len(epochs)
+                       for kind, epochs in scenario.get("events", {}).items()},
             "rates_hz": {**DEFAULT_RATES, **scenario.get("profiles", {}).get("rates_hz", {})},
             "warnings": scenario.get("warnings", [])}
 

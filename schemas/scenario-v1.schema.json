@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:hooking:scenario:1",
-  "title": "Hooking standalone probe scenario v1",
-  "description": "Local fixture data only. Implementations additionally validate finite numbers, chronology, references, proper rotations and size bounds described in docs/SCENARIOS.md.",
+  "title": "Hooking scenario v1",
+  "description": "Local fixture data only. Implementations additionally validate finite numbers, chronology, references, proper rotations, cumulative step totals, STILL/trajectory consistency and size bounds described in docs/SCENARIOS.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "version", "simulated", "name", "seed", "utc_origin_ms", "trajectory", "altitude_provenance", "catalog"],
@@ -51,15 +51,20 @@
     },
     "events": {
       "type": "object", "additionalProperties": false,
-      "description": "Each present array starts at t_ms=0 and has strictly increasing offsets within the trajectory. Records hold over [their offset, next offset); no interpolation of discrete state.",
+      "description": "Each present state array starts at t_ms=0 and has strictly increasing offsets within the trajectory. Records hold over [their offset, next offset). The optional steps object instead adds positive deltas at their exact offsets; its first delta need not be zero.",
+      "allOf": [{
+        "if": {"required": ["steps"]},
+        "then": {"properties": {"activity": {"items": {"properties": {"cadence_hz": {"const": 0}}}}}}
+      }],
       "properties": {
+        "steps": {"$ref": "#/$defs/steps"},
         "fix": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "valid"], "properties": {"t_ms": {"$ref": "#/$defs/time"}, "valid": {"type": "boolean"}}}},
         "activity": {
           "type": "array", "minItems": 1,
           "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "type", "cadence_hz"], "properties": {
             "t_ms": {"$ref": "#/$defs/time"},
-            "type": {"enum": ["STILL", "IN_VEHICLE", "WALKING", "RUNNING", "ON_BICYCLE"]},
-            "cadence_hz": {"type": "number", "minimum": 0, "maximum": 10, "description": "Steps per second; zero outside walking/running. Counter integrates intervals cumulatively."}
+            "type": {"enum": ["STILL", "IN_VEHICLE", "WALKING", "RUNNING", "ON_BICYCLE"], "description": "A STILL interval must not overlap horizontal or MSL-altitude trajectory movement; checked by runtime validators over half-open intervals."},
+            "cadence_hz": {"type": "number", "minimum": 0, "maximum": 10, "description": "Legacy steps per second, zero outside walking/running. Must be zero whenever events.steps is present."}
           }}
         },
         "power": {
@@ -89,6 +94,20 @@
     "warnings": {"type": "array", "items": {"type": "string"}}
   },
   "$defs": {
+    "steps": {
+      "type": "object", "additionalProperties": false, "required": ["start", "deltas"],
+      "description": "Sole step-counter source when present: start plus all deltas whose t_ms <= scene time. Runtime checks strict chronology, offsets <= trajectory duration and start+sum(deltas) <= 2^53-1.",
+      "properties": {
+        "start": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "deltas": {
+          "type": "array", "maxItems": 100000,
+          "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "delta"], "properties": {
+            "t_ms": {"$ref": "#/$defs/time"},
+            "delta": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+          }}
+        }
+      }
+    },
     "time": {"type": "integer", "minimum": 0, "maximum": 86400000, "description": "Scenario offset milliseconds, not device uptime or wall clock."},
     "rate": {"type": "number", "minimum": 0.001, "maximum": 100, "description": "Test samples per scenario second. Deadlines use device elapsedRealtimeNanos exclusively."},
     "knot": {

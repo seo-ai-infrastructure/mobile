@@ -38,6 +38,6 @@ fi
 
 cd "$plugin_dir"
 if [[ "$#" -eq 0 ]]; then
-    set -- :probe:assembleDebug :probe:testDebugUnitTest :probe:lintDebug
+    set -- :app:assembleProbeDebug :app:testProbeDebugUnitTest :app:lintProbeDebug
 fi
 exec ./gradlew --no-daemon "$@"

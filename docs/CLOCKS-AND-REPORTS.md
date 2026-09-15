@@ -9,6 +9,7 @@ Playback is local to the probe process. It does not dispatch Android `Location`,
 | --- | --- |
 | `utc_origin_ms` | Scenario's synthetic Unix UTC origin, supplied by its author |
 | `scenario_ms` | Logical playback position; freezes while paused |
+| `scene_elapsed_ns` | Original run boot epoch + scene offset, excluding pauses; a synthetic location-like timestamp, not an OS event |
 | NMEA UTC/date | `utc_origin_ms + scenario_ms`, never the arrival wall clock |
 | `sample_elapsed_ns` | Scheduled scenario sample mapped to the current start/resume anchor in device `elapsedRealtimeNanos()` |
 | `delivered_elapsed_ns` | Actual device `elapsedRealtimeNanos()` when the sample was produced |
@@ -63,6 +64,7 @@ survey catalog metadata from modeled signal levels and example additions.
 
 | Channel | Principal `values` fields and units |
 | --- | --- |
+| `pose` | Published 10 Hz lat/lon, MSL/geoid/ellipsoidal height, speed, bearing, vehicle acceleration/yaw, discontinuity and shared fix validity; consumed unchanged by phone and Auto |
 | `gnss` | `valid`, `synthetic_utc_ms`; nullable `location` with `lat`/`lon` degrees, `alt_msl_m`, `geoid_sep_m`, `alt_ellipsoid_m`, `speed_mps`, `bearing_degrees`, `accuracy_m`; `nmea` is a two-string GGA/RMC array including checksums and CRLF; `satellites` uses scenario satellite fields plus `fixture_used_in_fix`; `satellites_used`, `fixture_eligible_satellites`, `satellite_fixture_t_ms`, `hdop`, `hdop_provenance`, `raw_measurements:false` |
 | `imu` | Device-coordinate 3-vectors `gravity_mps2`, nullable `linear_accel_mps2` and `accelerometer_mps2`, nullable `gyro_rads`; `linear_accel_valid`, `gyro_valid`, `discontinuous`, `derivative_reason`, `heading_true_deg`, `model` |
 | `magnetic` | Device `field_ut` vector, `baseline_enu_ut`, `declination_deg`, `heading_true_deg` |
@@ -94,7 +96,7 @@ contain fictional fixtures, never account keys or the private Flamingo survey.
 - IMU is evaluated on demand from the trajectory, never stored as pre-expanded
   50 Hz arrays. Gravity, linear acceleration and their accelerometer sum are
   separate values. Gyroscope models heading yaw only; suspension pitch/roll are
-  not inferred. Noise is off by default; optional indexed variation is a fixture.
+  not inferred. IMU, magnetic and pressure noise is zero in v1; optional indexed variation applies only to radio visibility.
   Derivative windows stay inside a segment. At abrupt knots or a terminal stop,
   undefined derivatives are null and explicitly flagged as discontinuous; the
   model does not smear jumps into large fabricated accelerations. Dwell preserves
@@ -108,5 +110,12 @@ contain fictional fixtures, never account keys or the private Flamingo survey.
 - Radio tables display catalog visibility. Scripted connection labels are
   independent fixtures, not Wi-Fi associations, live modem state, received BLE
   advertisements, or GATT sessions. Activity scripts are not classifier results.
-- Step count is cumulative integration of walking/running cadence over the
-  script's half-open intervals. Driving/stationary intervals retain its value.
+- Explicit `events.steps` counts start plus all deltas with `t_ms <= scenario_ms`.
+  A delta at zero is included in the first frame's event count. Legacy cadence
+  fixtures use cumulative integration over half-open activity intervals.
+
+New frames also carry shared `valid` and `synthetic_utc_ms` fields. GNSS contains
+the same `pose` payload as the 10 Hz channel at matching epochs, even on fix loss;
+its valid-location field is null and satellite used flags are false during loss.
+Cellular `rssi_dbm` is null: opaque source attributes are not real RAT measurements.
+See [dispatcher routing](DISPATCHER.md) for deadlines and consumer ownership.

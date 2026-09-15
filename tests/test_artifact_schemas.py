@@ -13,7 +13,7 @@ class ArtifactSchemaTests(unittest.TestCase):
     def setUp(self):
         self.schema = json.loads((ROOT / "schemas/scenario-v1.schema.json").read_text())
         self.validator = Draft202012Validator(self.schema)
-        self.demo = json.loads((ROOT / "plugin/probe/src/main/assets/demo-scenario.json").read_text())
+        self.demo = json.loads((ROOT / "plugin/app/src/main/assets/demo-scenario.json").read_text())
 
     def test_schema_definitions_and_bundled_demo(self):
         Draft202012Validator.check_schema(self.schema)
@@ -40,9 +40,9 @@ class ArtifactSchemaTests(unittest.TestCase):
                     self.validator.validate(document)
 
     def test_java_export_matches_report_schema(self):
-        report = ROOT / "plugin/probe/build/reports/contract-report.json"
+        report = ROOT / "plugin/app/build/reports/contract-report.json"
         if not report.exists():
-            self.skipTest("Run :probe:testDebugUnitTest to produce the Java export artifact")
+            self.skipTest("Run :app:testProbeDebugUnitTest to produce the Java export artifact")
         schema = json.loads((ROOT / "schemas/report-v1.schema.json").read_text())
         document = json.loads(report.read_text())
         Draft202012Validator(schema).validate(document)
