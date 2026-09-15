@@ -1,0 +1,2 @@
+# Formal artifact contract validation; scenario_cli runtime uses its own validators.
+jsonschema==4.23.0

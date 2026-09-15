@@ -1,0 +1,15 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Short synthetic route for the DuoPlus probe",
+    "purpose": "Local simulated-location testing in com.example.duoplus_probe"
+  },
+  "geometry": {
+    "type": "LineString",
+    "coordinates": [
+      [-73.970000, 40.770000, 15.0],
+      [-73.969920, 40.770000, 15.0],
+      [-73.969920, 40.770060, 15.5]
+    ]
+  }
+}

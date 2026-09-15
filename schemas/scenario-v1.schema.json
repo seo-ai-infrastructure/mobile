@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hooking:scenario:1",
+  "title": "Hooking standalone probe scenario v1",
+  "description": "Local fixture data only. Implementations additionally validate finite numbers, chronology, references, proper rotations and size bounds described in docs/SCENARIOS.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "simulated", "name", "seed", "utc_origin_ms", "trajectory", "altitude_provenance", "catalog"],
+  "properties": {
+    "schema": {"const": "hooking.scenario"},
+    "version": {"const": 1},
+    "simulated": {"const": true},
+    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+    "seed": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647},
+    "utc_origin_ms": {"type": "integer", "minimum": 0, "maximum": 253402214399999, "description": "Synthetic UTC origin in Unix milliseconds, with 24-hour headroom before year 10000."},
+    "altitude_provenance": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "trajectory": {
+      "type": "array", "minItems": 2, "maxItems": 100000,
+      "description": "First offset zero; strictly increasing offsets. WGS84 coordinates, shortest-arc spherical interpolation across the antimeridian; heights linearly interpolated. Equal consecutive positions encode dwell.",
+      "items": {"$ref": "#/$defs/knot"}
+    },
+    "catalog": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "complete", "observed_at", "records"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "complete": {"type": "boolean"},
+        "observed_at": {"type": ["string", "null"], "description": "Source observation date, not download time; null means unknown."},
+        "catalog_checked_at": {"type": ["string", "null"]},
+        "records": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/radio"}}
+      }
+    },
+    "profiles": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "mount": {"type": "array", "minItems": 9, "maxItems": 9, "items": {"type": "number"}, "default": [1,0,0,0,0,1,0,-1,0], "description": "Row-major proper rotation from vehicle right/forward/up to device coordinates."},
+        "magnetic_enu_ut": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}, "default": [0,20,-40], "description": "Single true east/north/up field vector in microtesla; declination is atan2(east,north)."},
+        "qnh_hpa": {"type": "number", "minimum": 300, "maximum": 1200, "default": 1013.25, "description": "Example or supplied sea-level pressure, hPa; barometer output also hPa."},
+        "noise": {"type": "boolean", "default": false},
+        "rates_hz": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "gnss": {"const": 1},
+            "wifi": {"$ref": "#/$defs/rate"}, "cell": {"$ref": "#/$defs/rate"},
+            "ble": {"$ref": "#/$defs/rate"}, "imu": {"$ref": "#/$defs/rate"},
+            "magnetic": {"$ref": "#/$defs/rate"}, "pressure": {"$ref": "#/$defs/rate"},
+            "power": {"$ref": "#/$defs/rate"}, "activity": {"$ref": "#/$defs/rate"}
+          }
+        }
+      }
+    },
+    "events": {
+      "type": "object", "additionalProperties": false,
+      "description": "Each present array starts at t_ms=0 and has strictly increasing offsets within the trajectory. Records hold over [their offset, next offset); no interpolation of discrete state.",
+      "properties": {
+        "fix": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "valid"], "properties": {"t_ms": {"$ref": "#/$defs/time"}, "valid": {"type": "boolean"}}}},
+        "activity": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "type", "cadence_hz"], "properties": {
+            "t_ms": {"$ref": "#/$defs/time"},
+            "type": {"enum": ["STILL", "IN_VEHICLE", "WALKING", "RUNNING", "ON_BICYCLE"]},
+            "cadence_hz": {"type": "number", "minimum": 0, "maximum": 10, "description": "Steps per second; zero outside walking/running. Counter integrates intervals cumulatively."}
+          }}
+        },
+        "power": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "battery_pct", "charging", "thermal_status"], "properties": {
+            "t_ms": {"$ref": "#/$defs/time"}, "battery_pct": {"type": "number", "minimum": 0, "maximum": 100},
+            "charging": {"type": "boolean"}, "thermal_status": {"enum": ["NONE", "LIGHT", "MODERATE", "SEVERE", "CRITICAL", "EMERGENCY", "SHUTDOWN"]}
+          }}
+        },
+        "gnss": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "satellites"], "properties": {
+            "t_ms": {"$ref": "#/$defs/time"},
+            "satellites": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/satellite"}, "description": "Unique constellation/SVID pairs. Effective fix validity requires >=4 used satellites and requested fix validity. Status is independent of NMEA parsing."}
+          }}
+        },
+        "connections": {
+          "type": "array", "minItems": 1,
+          "description": "Explicit simulated connection state, independent of catalog visibility; no actual modem, association, advertisement reception or GATT connection.",
+          "items": {"type": "object", "additionalProperties": false, "required": ["t_ms", "wifi_id", "cell_id", "ble_ids"], "properties": {
+            "t_ms": {"$ref": "#/$defs/time"}, "wifi_id": {"type": ["string", "null"]}, "cell_id": {"type": ["string", "null"]},
+            "ble_ids": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"type": "string"}}
+          }}
+        }
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "time": {"type": "integer", "minimum": 0, "maximum": 86400000, "description": "Scenario offset milliseconds, not device uptime or wall clock."},
+    "rate": {"type": "number", "minimum": 0.001, "maximum": 100, "description": "Test samples per scenario second. Deadlines use device elapsedRealtimeNanos exclusively."},
+    "knot": {
+      "type": "object", "additionalProperties": false, "required": ["t_ms", "lat", "lon", "alt_msl_m", "geoid_sep_m"],
+      "properties": {
+        "t_ms": {"$ref": "#/$defs/time"}, "lat": {"type": "number", "minimum": -90, "maximum": 90},
+        "lon": {"type": "number", "minimum": -180, "maximum": 180},
+        "alt_msl_m": {"type": "number", "minimum": -12000, "maximum": 20000, "description": "Orthometric/mean-sea-level altitude, metres; bounded terrestrial pressure-model domain."},
+        "geoid_sep_m": {"type": "number", "minimum": -1000, "maximum": 1000, "description": "Ellipsoidal height minus MSL height, metres."}
+      }
+    },
+    "radio": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id", "lat", "lon", "fields", "provenance"],
+      "properties": {
+        "kind": {"enum": ["wifi", "cell", "ble"]}, "id": {"type": "string", "minLength": 1, "maxLength": 512},
+        "lat": {"type": "number", "minimum": -90, "maximum": 90}, "lon": {"type": "number", "minimum": -180, "maximum": 180},
+        "fields": {"type": "object", "description": "Survey fields or explicitly labeled examples. Opaque cellular attributes are not decoded as RAT or modem state."},
+        "provenance": {"type": "object", "required": ["id", "lat", "lon"], "additionalProperties": {"enum": ["survey", "example", "modeled"]}},
+        "source": {"type": ["string", "null"]}, "observed_at": {"type": ["string", "null"]}, "catalog_checked_at": {"type": ["string", "null"]}
+      }
+    },
+    "satellite": {
+      "type": "object", "additionalProperties": false,
+      "required": ["constellation", "svid", "cn0_dbhz", "elevation_deg", "azimuth_deg", "used_in_fix", "has_ephemeris", "has_almanac"],
+      "properties": {
+        "constellation": {"enum": ["GPS", "GLONASS", "GALILEO", "BEIDOU", "QZSS", "SBAS", "IRNSS"]},
+        "svid": {"type": "integer", "minimum": 1, "maximum": 999},
+        "cn0_dbhz": {"type": "number", "minimum": 0, "maximum": 100},
+        "elevation_deg": {"type": "number", "minimum": -90, "maximum": 90},
+        "azimuth_deg": {"type": "number", "minimum": 0, "exclusiveMaximum": 360},
+        "used_in_fix": {"type": "boolean"}, "has_ephemeris": {"type": "boolean"}, "has_almanac": {"type": "boolean"},
+        "carrier_hz": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}
