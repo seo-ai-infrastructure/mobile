@@ -147,6 +147,8 @@ its observations to load, then choose **Download for Hooking**. The download
 includes every saved observation regardless of the table's filter or page. It
 preserves original observation/query dates and incomplete-coverage warnings;
 downloading does not refresh WiGLE or change the device.
+The same panel links the current **Scenario builder & guide**, **Hooking Android
+app**, and **Demo scenario**, all served by the production Observatory site.
 
 Use that download with a local route:
 
@@ -173,7 +175,10 @@ Observatory `queriedAt` supplies `catalog_checked_at`; unknown query time remain
 unknown. Record observation dates remain `firsttime`, `lasttime`, and `lastupdt`.
 Wrapper `importedAt` is retained in a warning as file-import metadata, never used
 as a query/observation timestamp. Coverage always remains `complete:false`;
-pagination, rejection, and duplicate warnings are retained. The adapter accepts at
+newer summary `source` and `queriedAt` fields are accepted and checked. Query
+`siteId` is optional; a positive finite `radiusM` is retained as query-boundary
+metadata, never treated as complete coverage. Conflicting query dates are rejected.
+Pagination, rejection, and duplicate warnings are retained. The adapter accepts at
 most 1,000 records per Observatory upload before deduplication, matching that
 format's limit. Existing 16 MiB input and 10,000-record scenario limits still apply.
 Malformed versions, fields, coordinates, dates, numeric values, or Bluetooth

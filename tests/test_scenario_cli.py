@@ -257,6 +257,77 @@ class ObservatoryCatalogTests(unittest.TestCase):
         self.assertFalse(value["catalog"]["complete"])
         self.assertTrue(all(row["provenance"]["id"] == "example" for row in value["catalog"]["records"]))
 
+    def test_current_query_download_supports_summary_optional_site_and_radius(self):
+        data = observatory_upload()
+        data["queriedAt"] = "2026-01-02T00:00:00.000Z"
+        data["query"] = {"queriedAt": data["queriedAt"], "endpoint": "network/search",
+                         "anchor": {"lat": 0, "lng": 0}, "radiusM": 250.5}
+        wrapper = {"upload": {"source": "WIGLE_QUERY", "queriedAt": data["queriedAt"],
+                              "importedAt": "2026-02-01T00:00:00Z", "data": data}}
+        original = deepcopy(wrapper)
+        value = scenarios.compile_scenario(route(), speed_mps=2, catalog_document=wrapper)
+        scenarios.validate_scenario(value)
+        self.assertEqual(wrapper, original)
+        self.assertEqual(value["catalog"]["catalog_checked_at"], data["queriedAt"])
+        self.assertFalse(value["catalog"]["complete"])
+        self.assertIsNone(value["catalog"]["observed_at"])
+        self.assertTrue(any("250.5 m" in warning and "not verified radio coverage" in warning for warning in value["warnings"]))
+        self.assertTrue(any("WiGLE API query" in warning for warning in value["warnings"]))
+        for record in value["catalog"]["records"]:
+            self.assertEqual(record["catalog_checked_at"], data["queriedAt"])
+            self.assertEqual(record["fields"]["lasttime"], "2025-10-01T00:00:00.000Z")
+            self.assertEqual(record["provenance"]["lasttime"], "survey")
+        data["query"]["siteId"] = "private-site-not-exported"
+        with_site, _ = scenarios.import_catalog(wrapper)
+        self.assertEqual(with_site, scenarios.import_catalog(original)[0])
+        self.assertNotIn("private-site-not-exported", json.dumps(with_site))
+
+    def test_current_manual_and_unknown_summary_keep_unknown_query_time(self):
+        for source in (None, "UPLOAD"):
+            with self.subTest(source=source):
+                wrapper = {"upload": {"source": source, "queriedAt": None,
+                                      "importedAt": "2026-02-01T00:00:00Z", "data": observatory_upload()}}
+                catalog, _ = scenarios.import_catalog(wrapper)
+                legacy, _ = scenarios.import_catalog(wrapper["upload"]["data"])
+                self.assertEqual(catalog, legacy)
+                self.assertNotIn("catalog_checked_at", catalog)
+                self.assertTrue(all(record["provenance"]["id"] == "survey" for record in catalog["records"]))
+
+    def test_current_summary_metadata_rejects_bad_types_and_disagreeing_dates(self):
+        for source in (False, 1, [], {}, "QUERY", "upload", ""):
+            with self.subTest(source=source), self.assertRaisesRegex(HooksError, "upload source"):
+                scenarios.import_catalog({"upload": {"source": source, "data": observatory_upload()}})
+        for queried_at in (False, 0, [], {}, "", "2026-01-01", "2026-02-30T00:00:00Z"):
+            with self.subTest(queried_at=queried_at), self.assertRaises(HooksError):
+                scenarios.import_catalog({"upload": {"queriedAt": queried_at, "data": observatory_upload()}})
+        for payload_date in (None, "2026-01-01T00:00:00Z"):
+            data = observatory_upload()
+            data["queriedAt"] = payload_date
+            with self.subTest(payload_date=payload_date), self.assertRaisesRegex(HooksError, "timestamps disagree"):
+                scenarios.import_catalog({"upload": {"queriedAt": "2026-01-02T00:00:00Z", "data": data}})
+
+    def test_optional_query_site_and_radius_validate_without_relaxing_unknown_fields(self):
+        data = observatory_upload()
+        data["queriedAt"] = "2026-01-01T00:00:00Z"
+        data["query"] = {"queriedAt": data["queriedAt"], "endpoint": "cell/search", "anchor": {"lat": 0, "lng": 0}}
+        scenarios.import_catalog(data)
+        for radius in (1, 0.1):
+            data["query"]["radiusM"] = radius
+            scenarios.import_catalog(data)
+        for radius in (None, False, "250", 0, -1, float("nan"), float("inf"), [], {}):
+            data["query"]["radiusM"] = radius
+            with self.subTest(radius=radius), self.assertRaises(HooksError):
+                scenarios.import_catalog(data)
+        del data["query"]["radiusM"]
+        for site in (None, 1, False, [], {}, "", " ", "a" * 201):
+            data["query"]["siteId"] = site
+            with self.subTest(site=site), self.assertRaises(HooksError):
+                scenarios.import_catalog(data)
+        del data["query"]["siteId"]
+        data["query"]["extra"] = True
+        with self.assertRaisesRegex(HooksError, "unknown fields"):
+            scenarios.import_catalog(data)
+
     def test_malformed_records_metadata_and_unsupported_shapes_fail(self):
         changes = [
             lambda d: d.update(version=True), lambda d: d.update(version=2),

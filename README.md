@@ -4,7 +4,7 @@ An Android multisensor simulator with a phone call/map console and Android Auto 
 
 ## Quick start
 
-1. Download the debug APK from a successful [Android build](https://github.com/seo-ai-infrastructure/mobile/actions/workflows/android.yml), or build locally below.
+1. Download the verified [Hooking 1.3.1 APK](https://observatory-controller-production.up.railway.app/downloads/hooking-probe-1.3.1-debug.apk) from Observatory, or build locally below.
 2. Open **Hooking → Load demo → Start**, allowing playback notifications. Import your own scenario with **Import JSON**.
 3. Choose **Open call & map console** for the route map and phone controls. Expand **Keypad** to request the default phone role or enter a number. A dial intent only prefills; a real call requires pressing **Place real call**.
 
@@ -23,6 +23,8 @@ adb install -r plugin/app/build/outputs/apk/probe/debug/app-probe-debug.apk
 The standalone project needs no module token, DuoPlus loader, SDK bridge JAR, native library, or API key. Debug builds are for local testing. Build unsigned release output with `./plugin/build.sh :app:assembleProbeRelease`; configure your own signing separately. Debug APKs built on different machines may have different signing certificates.
 
 ## Scenario tools
+
+Get the current [scenario builder and guide](https://observatory-controller-production.up.railway.app/downloads/hooking-source.zip) or [demo scenario](https://observatory-controller-production.up.railway.app/downloads/demo-scenario.json) from Observatory. These links also appear under **Saved WiGLE data** in the dashboard.
 
 Python 3.10 or later:
 

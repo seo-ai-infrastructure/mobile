@@ -228,6 +228,7 @@ def survey_number(value: Any, name: str) -> float:
 def observatory_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """Adapt the saved Observatory v1 payload; provider responses are never exported."""
     warnings: list[str] = []
+    summary_queried_at = None
 
     def count(value: Any, name: str, maximum: int = 9007199254740991) -> int:
         return integer(value, name, 0, maximum)
@@ -260,7 +261,15 @@ def observatory_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], list[
         upload = document["upload"]
         require(isinstance(upload, dict), "Observatory upload must be an object")
         keys_match(upload, {"data"}, {"id", "filename", "importedAt", "wifiCount", "cellCount", "bluetoothCount",
-                                      "rejectedCount", "duplicateCount"}, "Observatory upload")
+                                      "rejectedCount", "duplicateCount", "source", "queriedAt"}, "Observatory upload")
+        if "source" in upload:
+            require(upload["source"] is None or (isinstance(upload["source"], str)
+                    and upload["source"] in ("UPLOAD", "WIGLE_QUERY")), "invalid Observatory upload source")
+            if upload["source"] is not None:
+                label = "WiGLE API query" if upload["source"] == "WIGLE_QUERY" else "manual JSON upload"
+                warnings.append(f"Observatory saved source: {label}; radio fields retain survey provenance.")
+        if "queriedAt" in upload:
+            summary_queried_at = date(upload["queriedAt"], "summary query time")
         for name in ("id", "filename"):
             if name in upload:
                 text_value(upload[name], f"upload {name}", 512)
@@ -295,11 +304,18 @@ def observatory_catalog(document: dict[str, Any]) -> tuple[dict[str, Any], list[
     if page["hasCursor"] or (page["totalResults"] is not None and page["totalResults"] > len(rows)):
         warnings.append("Observatory saved data is a partial search/page; no missing pages were fetched.")
     queried_at = date(document["queriedAt"], "query time")
+    if summary_queried_at is not None:
+        require(summary_queried_at == queried_at, "Observatory summary and payload query timestamps disagree")
     if "query" in document:
         query = document["query"]
         require(isinstance(query, dict), "Observatory query must be an object")
-        keys_match(query, {"siteId", "queriedAt", "endpoint", "anchor"}, set(), "Observatory query")
-        text_value(query["siteId"], "query site ID", 200)
+        keys_match(query, {"queriedAt", "endpoint", "anchor"}, {"siteId", "radiusM"}, "Observatory query")
+        if "siteId" in query:
+            text_value(query["siteId"], "query site ID", 200)
+        if "radiusM" in query:
+            radius = finite_number(query["radiusM"], "Observatory query radiusM")
+            require(radius > 0, "Observatory query radiusM must be positive")
+            warnings.append(f"Observatory saved search radius: {radius:g} m; a query boundary, not verified radio coverage.")
         require(query["endpoint"] in ("network/search", "cell/search", "bluetooth/search"), "unsupported Observatory query endpoint")
         require(date(query["queriedAt"], "saved query time") == queried_at and queried_at is not None,
                 "Observatory query timestamps disagree")

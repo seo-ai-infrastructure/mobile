@@ -90,3 +90,19 @@ Fourteen focused download/UI tests and the dashboard build passed. The deployed
 JavaScript matches the reviewed source byte for byte. An export-to-compiler
 round trip passed runtime and JSON Schema validation. Use the downloaded
 catalog with a route, then import the resulting scenario through Hooking.
+
+## Production distribution update — 2026-09-16
+
+The Observatory dashboard's **Saved WiGLE data** panel links the Hooking APK,
+scenario builder/source ZIP, demo scenario and this validation report under the
+same Railway production origin. The Android APK remains the exact 1.3.1 binary
+validated above; the scenario builder now supports the current saved-query
+summary fields (`source`, `queriedAt`), optional `siteId`, and query `radiusM`.
+Conflicting timestamps and malformed metadata remain rejected. Coverage and
+per-record observation provenance are preserved.
+
+The updated builder passes all 74 Python tests, including four new compatibility
+cases. The current Observatory parser/summary and browser export were passed
+through compilation and formal scenario validation. Dashboard download tests
+pass (14 cases). Checksums are published in `/downloads/SHA256SUMS`; the release
+file list is `/downloads/release.json` on the production origin.
